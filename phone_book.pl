@@ -18,9 +18,20 @@ sub  trim {
     my $text = shift; 
     $text =~ s/^\s+|\s+$//g; 
     return $text 
-    };
+};
 
-# Проверяем существование таблиц и создаём их
+sub check_phone {
+
+    my $phone = "$_[0]";
+
+    my $sql_check_phone = $dbh->prepare("SELECT fname, lname, patronymic, phone FROM contacts WHERE phone='$phone'");
+    $sql_check_phone->execute();
+    my @contact = $sql_check_phone->fetchrow_array();
+    return @contact
+
+};
+
+# Проверяем существование таблицы и создаём её
 
 my @tables;
 my $sql_show_tables = $dbh->prepare("show tables;");
@@ -40,25 +51,12 @@ CREATE TABLE contacts (
   fname         VARCHAR(100) NOT NULL,
   lname         VARCHAR(100) NOT NULL,
   patronymic    VARCHAR(100),
+  phone         VARCHAR(100) UNIQUE NOT NULL,
+  type_phone    VARCHAR(100) NOT NULL,
   primary key (id)
 );
 END_SQL
 $dbh->do($sql_create_table_contacts);
-
-}
-
-if ( not(grep( /^phone_numbers$/, @tables )) ) {
-
-my $sql_create_table_phone_numbers = <<'    END_SQL';
-    CREATE TABLE phone_numbers (
-    id            INTEGER NOT NULL AUTO_INCREMENT,
-    contact_id    INTEGER NOT NULL,
-    phone         VARCHAR(100) UNIQUE NOT NULL,
-    type_phone    VARCHAR(100) NOT NULL,
-    primary key (id)
-    );
-    END_SQL
-$dbh->do($sql_create_table_phone_numbers);
 
 }
 
@@ -144,7 +142,8 @@ while ( 42 ) {
                         next;
                 }};
 
-                (my $final_message = qq{Отлично, проверь, всё ли правильно записано:
+                (my $final_message = qq{
+                    Отлично, проверь, всё ли правильно записано:
 
                     Имя: $fname
                     Фамиллия: $lname
@@ -157,7 +156,7 @@ while ( 42 ) {
                     1) Записать контакт;
                     2) Ввести заново;
                     3) Вернуться в основное меню.
-                }) =~ s/^ {2}//mg;
+                }) =~ s/^ {16}//mg;
                 print $final_message;
 
                 my $choice = <STDIN>;
@@ -167,16 +166,10 @@ while ( 42 ) {
 
                     if ( $choice == 1 ) {
                             my $add_contact = <<"                                END_SQL";
-                                    INSERT contacts (fname, lname, patronymic)
-                                    VALUES ('$fname', '$lname', '$patronymic_name');
+                                    INSERT contacts (fname, lname, patronymic, phone, type_phone)
+                                    VALUES ('$fname', '$lname', '$patronymic_name', '$phone', '$phone_type');
                                 END_SQL
                             $dbh->do($add_contact);
-
-                            my $add_phone = <<"                                END_SQL";
-                                    INSERT phone_numbers (contact_id, phone, type_phone)
-                                    VALUES (LAST_INSERT_ID(), '$phone', '$phone_type'); 
-                                END_SQL
-                            $dbh->do($add_phone);
 
                         print "Контакт записан";
                         last;
@@ -189,7 +182,45 @@ while ( 42 ) {
             };
         } elsif ( $choice == 3 ) {
             print "Ты выбрал 3 => Удалить контакт\n";
-            last;
+            print "Введи номер, который хочешь удалить в формате 8-999-999-99-99   >";
+            
+            my $phone_number = <STDIN>;
+            chomp $phone_number;
+            $phone_number = trim($phone_number);
+
+
+
+            if ( $phone_number =~ m/^[0-9]{1,3}-[0-9]{3}-[0-9]{3}-[0-9]{2}-[0-9]{2}$/ ) {
+
+                my ($fmane_to_del, $lname_to_del, $patronymic_to_del, $phone_to_del) = check_phone($phone_number);
+
+                if ( $phone_to_del ) {
+                (my $del_message = qq{
+                Найден контакт: $lname_to_del $fmane_to_del $patronymic_to_del телефон $phone_to_del
+                Чтобы удалить контакт введи yes. 
+                Введи любое другое значение для отмены и возврата в меню.
+                }) =~ s/^ {12}//mg;
+
+                print $del_message;
+                
+                my $choice = <STDIN>;
+                chomp $choice;
+
+                if ( $choice eq ("yes") ) {
+                my $del_phone = <<"                    END_SQL";
+                        DELETE FROM contacts where phone='$phone_number'
+                    END_SQL
+                $dbh->do($del_phone);  
+                } else {
+                    next;
+                };
+
+                } else {
+                    print "Номер не найден!";
+                    next;
+                }
+            }
+
         } elsif ( $choice == 4 ) {
             print "Ты выбрал 4 => Изменить контакт\n";
             last;
