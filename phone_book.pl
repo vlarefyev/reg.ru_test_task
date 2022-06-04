@@ -3,7 +3,7 @@ use warnings;
 use Scalar::Util qw(looks_like_number);
 use DBI;
 
-my $host      = '*****';
+my $host      = "*****";
 my $port      = "*****";
 my $user     = "*****";
 my $password = "*****";
@@ -22,7 +22,7 @@ sub  trim {
 
 sub check_phone {
 
-    my $phone = "$_[0]";
+    my $phone = shift;
 
     my $sql_check_phone = $dbh->prepare("SELECT fname, lname, patronymic, phone FROM contacts WHERE phone='$phone'");
     $sql_check_phone->execute();
@@ -86,8 +86,20 @@ while ( 42 ) {
 
     if ( looks_like_number($choice) ) {
         if ( $choice == 1 ) {
-            print "Ты выбрал 1 => Показать все контакты\n";
-            last;
+
+            my $sql_check_phone = $dbh->prepare("SELECT fname, lname, patronymic, phone FROM contacts");
+            $sql_check_phone->execute();
+
+            while (my @table = $sql_check_phone->fetchrow_array() ) {
+
+            my $fname = $table[0];
+            my $lname = $table[1];
+            my $patronymic = $table[2];
+            my $phone = $table[3];
+
+            print "$lname $fname $patronymic ---> $phone\n";
+            };
+            next;
         } elsif ( $choice == 2 ) {
             print "Ты выбрал 2 => Добавить контакт\n";
 
