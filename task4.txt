@@ -1,0 +1,4 @@
+SELECT domains.dname, users.name 
+FROM domains 
+INNER JOIN users ON domains.user_id = users.user_id 
+WHERE name = 'Иван Иванов';
