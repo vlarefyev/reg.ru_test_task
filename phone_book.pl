@@ -2,15 +2,18 @@ use strict;
 use warnings;
 use Scalar::Util qw(looks_like_number);
 use DBI;
+use utf8;
+
+binmode STDOUT, ":utf8";
 
 my $host      = "*****";
 my $port      = "*****";
-my $user     = "*****";
-my $password = "*****";
+my $user      = "*****";
+my $password  = "*****";
 
 # Устанавливаем соединение с БД
 my $dsn      = "DBI:mysql:database=task_regru;host=$host;port=$port";
-my $dbh = DBI->connect ($dsn, $user, $password) or die "Не удалось установить соединение с базой данных: " . DBI->errstr();
+my $dbh = DBI->connect ($dsn, $user, $password, {mysql_enable_utf8 => 1}) or die "Не удалось установить соединение с базой данных: " . DBI->errstr();
 
 # Вспомогательные функции
 
@@ -18,7 +21,14 @@ sub  trim {
     my $text = shift; 
     $text =~ s/^\s+|\s+$//g; 
     return $text 
-};
+}
+
+sub send_request_to_database {
+
+    my $request = shift;
+    $dbh->do($request);
+
+}
 
 sub get_response_user {
 
@@ -27,7 +37,7 @@ sub get_response_user {
     $response = trim("$response");
     return $response
 
-};
+}
 
 sub check_valid_phone {
     my $phone = shift;
@@ -37,9 +47,52 @@ sub check_valid_phone {
     } else {
         return 0;
     }
-};
+}
 
-############################ Поменять название
+sub check_valid_name {
+    
+    my $name = shift;
+
+    utf8::decode($name);
+
+    if ( $name =~ m/^[a-zA-Zа-яА-Я-]{2,20}$/ ) {
+        return $name
+    } else {
+        return 0
+    }
+}
+
+sub create_database {
+
+    my @tables;
+    my $sql_show_tables = $dbh->prepare("show tables;");
+    $sql_show_tables->execute();
+
+    while (my $table = $sql_show_tables->fetchrow_array() ) {
+
+    push @tables, $table;
+
+    };
+
+    if ( not(grep( /^contacts$/, @tables )) ) {
+        
+    (my $sql_create_table_contacts = qq{
+    CREATE TABLE contacts (
+    id            INTEGER NOT NULL AUTO_INCREMENT,
+    fname         VARCHAR(100) NOT NULL,
+    lname         VARCHAR(100) NOT NULL,
+    patronymic    VARCHAR(100),
+    phone         VARCHAR(100) UNIQUE NOT NULL,
+    type_phone    VARCHAR(100) NOT NULL,
+    primary key (id)
+    )}) =~ s/^ +//mg;
+
+    send_request_to_database($sql_create_table_contacts)
+
+    }
+
+}
+
 sub contact_search {
 
     my $search_parameter = shift;
@@ -58,14 +111,84 @@ sub contact_search {
         my @contact = $sql_check_id->fetchrow_array();
         return @contact  
     }
-};
+}
 
-sub send_request_to_database {
+sub enter_phone {
 
-    my $request = shift;
-    $dbh->do($request);
+    print "Введи телефон в формате 8-999-999-99-99\n";
 
-};
+    my $phone_unconfirmed = &get_response_user;
+
+    if ( check_valid_phone($phone_unconfirmed) ) {
+        return $phone_unconfirmed;
+    } else {
+        print "Номер введён не верно\n";
+        &enter_phone
+    }
+}
+
+sub enter_phone_type {
+
+    (my $message = qq{
+        Выбери тип телефона: 
+        1) Мобильный;
+        2) Стационарный.\n\n}) =~ s/^ +//mg;
+
+    print $message;
+
+    my $phone_type_unconfirmed = &get_response_user;
+
+    if ( $phone_type_unconfirmed =~ m/^[12]{1}$/) {
+        if ( $phone_type_unconfirmed == 1 ) {
+            return "m";
+        } else {
+            return "s";
+        }
+    } else {
+        print "Такого варианта нет. Попробуй ещё раз";
+        &enter_phone_type;
+    }
+}  
+
+sub enter_name {
+
+    my $name_type_received  = $_[0];
+    my $name_text;
+    my $alt_name_text;
+    
+    if ( $name_type_received  eq "fname" ){
+        $alt_name_text = $name_text = "имя"    
+    } elsif ( $name_type_received  eq "lname" ) {
+        $alt_name_text = "фамилия";
+        $name_text = "фамилию"
+    } elsif ( $name_type_received  eq "patronymic" ) {
+        $alt_name_text = $name_text = "отчество"
+    } else {
+        print "Ошибка! Несушествующий тип имени $name_type_received";
+        exit;
+    }
+
+    print "Введи $name_text\n";
+    my $name_to_check = &get_response_user;
+
+    my $name_test = check_valid_name("$name_to_check");
+
+    if ( not ($name_test) ) {
+        (my $error_message = qq{
+        Поле $alt_name_text введено не корректно. 
+        Повтори попытку.
+        
+        Требования к написанию:
+
+        От 2 до 20 символов;
+        Допускается специальный символ "-"\n}) =~ s/^ +//mg;
+        print $error_message;
+        &enter_name
+    } else {
+        return $name_test
+    }
+
+}
 
 # Основные функции
 
@@ -88,55 +211,14 @@ sub print_all_contact {
     
     };
 
-};
+    &start_menu
+}
 
 sub add_contact {
 
-    sub enter_phone {
-
-        print "Введи телефон в формате 8-999-999-99-99\n";
-
-        my $phone_unconfirmed = &get_response_user;
-
-        if ( check_valid_phone($phone_unconfirmed) ) {
-            return $phone_unconfirmed;
-        } else {
-            print "Номер введён не верно\n";
-            &enter_phone
-        }};
-
-
-    sub enter_phone_type {
-
-        (my $message = qq{
-            Выбери тип телефона: 
-            1) Мобильный;
-            2) Стационарный.\n\n}) =~ s/^ +//mg;
-
-        print $message;
-
-        my $phone_type_unconfirmed = &get_response_user;
-
-        if ( $phone_type_unconfirmed =~ m/^[12]{1}$/) {
-            if ( $phone_type_unconfirmed == 1 ) {
-                return "m";
-            } else {
-                return "s";
-            }
-        } else {
-            print "Такого варианта нет. Попробуй ещё раз";
-            &enter_phone_type;
-        }};    
-    
-    print "Введи имя\n";
-    my $fname = &get_response_user;
-
-    print "Введи фамиллию\n";
-    my $lname = &get_response_user;
-
-    print "Введи отчество (при наличии)\n";
-    my $patronymic_name = &get_response_user;   
-
+    my $fname = enter_name("fname");
+    my $lname = enter_name("lname");
+    my $patronymic_name = enter_name("patronymic");  
     my $phone = &enter_phone;
     my $phone_type = &enter_phone_type;    
 
@@ -166,15 +248,16 @@ sub add_contact {
                 INSERT contacts (fname, lname, patronymic, phone, type_phone)
                 VALUES ('$fname', '$lname', '$patronymic_name', '$phone', '$phone_type')};        
                 send_request_to_database($add_contact);
-                print "Контакт записан";
+                print "\nКонтакт записан\n";
+                &start_menu;
         } elsif ( $choice == 2 ) {
             &add_contact;       
         } else {
-            print "Тут основная функция"
+            &start_menu;
         }
     } 
 
-};
+}
 
 sub del_contact {
 
@@ -197,13 +280,14 @@ sub del_contact {
             if ( $choice eq ("yes") ) {
                 my $del_phone = "DELETE FROM contacts where phone='$phone_to_del'";
                 send_request_to_database($del_phone);
-                print "Контакт удалён!"
+                print "Контакт удалён!";
+                &start_menu
             }
         } else {
             print "Номер не найден!";
-            ############### Тут возврат в основную функцию.
+            &start_menu
         }
-};
+}
 
 sub update_contact {
 
@@ -230,73 +314,67 @@ sub update_contact {
 
             my $choice = &get_response_user;
 
-            if ( $choice =~ m/[1-5]{1}/ ) {
-                
+            if ( $choice == 0 ) {
+                &start_menu;
+            }
+
+
+
+            sub get_variable_to_up {
+
+                my $choice = shift;
+
+                my $data_update;
                 my @variables = ("fname", "lname", "patronymic", "phone", "type_phone");
                 my $variable = $variables[($choice - 1)];
 
-                print "Введи новое значение\n";
+                if ( $choice =~ m/[1-5]{1}/ ) {              
+                   
+                    if ( $choice =~ m/[1-3]{1}/ ) {
 
-                my $new_value = &get_response_user;
+                        $data_update = enter_name($variable)
 
-                my $sql_request_update = "UPDATE contacts SET $variable = '$new_value' WHERE id='$id_to_up'";
-                send_request_to_database($sql_request_update);
-                print "Контакт изменён!\n"          
+                    } elsif ( $choice == 4 ) {
 
-            } elsif ( $choice == 0 ) {
-                print "Выход из функции"
-            } else {
-                print "что-то введено не так"
+                        $data_update = enter_phone()
+
+                    } elsif ( $choice == 5 ) {
+
+                        $data_update = enter_phone_type()
+
+                    } else {
+
+                        print "Такого варианта нет. Попробуй ещё раз";
+                        &phone_to_up;
+                    
+                    }
+                };
+
+                return ($data_update, $variable)
             }
-};
 
-};
-# Проверяем существование таблицы и создаём её
+            my ($variable_to_up, $variable_type) = &get_variable_to_up( $choice );
 
-my @tables;
-my $sql_show_tables = $dbh->prepare("show tables;");
-$sql_show_tables->execute();
-
-while (my $table = $sql_show_tables->fetchrow_array() ) {
-
-push @tables, $table;
-
-};
-
-if ( not(grep( /^contacts$/, @tables )) ) {
-    
-my $sql_create_table_contacts = <<'END_SQL';
-CREATE TABLE contacts (
-  id            INTEGER NOT NULL AUTO_INCREMENT,
-  fname         VARCHAR(100) NOT NULL,
-  lname         VARCHAR(100) NOT NULL,
-  patronymic    VARCHAR(100),
-  phone         VARCHAR(100) UNIQUE NOT NULL,
-  type_phone    VARCHAR(100) NOT NULL,
-  primary key (id)
-);
-END_SQL
-$dbh->do($sql_create_table_contacts);
+                my $sql_request_update = "UPDATE contacts SET $variable_type = '$variable_to_up' WHERE id='$id_to_up'";
+                send_request_to_database($sql_request_update);
+                print "Контакт изменён!\n";      
+                &start_menu;
+        } else {
+            print "\nНомер не найден!\n";
+            &start_menu;
+        };
 
 }
 
-# Выводим меню
+sub start_menu {
 
-(my $hello_message = qq{
-    Замечательная телефонная книжка!
-}) =~ s/^ +//mg;
-
-print $hello_message;
-
-while ( 42 ) {
-    
     (my $start_message = qq{
         Выбери дальнейшее действие: 
 
         1) Показать все контакты;
         2) Добавить контакт;
         3) Удалить контакт;
-        4) Изменить контакт.\n\n}) =~ s/^ {8}//mg;
+        4) Изменить контакт.\n\n}) =~ s/^ +//mg;
 
     print $start_message;
 
@@ -306,7 +384,6 @@ while ( 42 ) {
     if ( looks_like_number($choice) ) {
         if ( $choice == 1 ) {
             &print_all_contact;
-            next;
         } elsif ( $choice == 2 ) {
             &add_contact;
         } elsif ( $choice == 3 ) {
@@ -314,10 +391,23 @@ while ( 42 ) {
         } elsif ( $choice == 4 ) {
             &update_contact;
         } else {
-            print "Такого варианта нет. Попробуй ещё раз\n"
+            print "Такого варианта нет. Попробуй ещё раз\n";
+            &start_menu
         };
         } else {
-            print "Введённое значение не является числом. Попробуй ещё раз\n"
+            print "Введённое значение не является числом. Попробуй ещё раз\n";
+            &start_menu
         }
-        
 }
+
+# Старт программы
+
+(my $hello_message = qq{
+    Замечательная телефонная книжка!
+}) =~ s/^ +//mg;
+
+print $hello_message;
+
+
+&create_database;
+&start_menu;
