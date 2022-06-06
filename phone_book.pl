@@ -9,10 +9,11 @@ binmode STDOUT, ":utf8";
 my $host      = "*****";
 my $port      = "*****";
 my $user      = "*****";
+my $database  = "*****";
 my $password  = "*****";
 
 # Устанавливаем соединение с БД
-my $dsn      = "DBI:mysql:database=task_regru;host=$host;port=$port";
+my $dsn      = "DBI:mysql:database=$database;host=$host;port=$port";
 my $dbh = DBI->connect ($dsn, $user, $password, {mysql_enable_utf8 => 1}) or die "Не удалось установить соединение с базой данных: " . DBI->errstr();
 
 # Вспомогательные функции
@@ -42,7 +43,7 @@ sub get_response_user {
 sub check_valid_phone {
     my $phone = shift;
 
-    if ( $phone =~ m/^[0-9]{1,3}-[0-9]{3}-[0-9]{3}-[0-9]{2}-[0-9]{2}$/ ) {
+    if ( $phone =~ m/^[0-9]{1,3}(-[0-9]{3}){2}(-[0-9]{2}){2}$/ ) {
         return 1;
     } else {
         return 0;
@@ -62,7 +63,7 @@ sub check_valid_name {
     }
 }
 
-sub create_database {
+sub create_table {
 
     my @tables;
     my $sql_show_tables = $dbh->prepare("show tables;");
@@ -196,7 +197,7 @@ sub print_all_contact {
             
     my @all_contact;
     
-    my $sql_all_contact = $dbh->prepare("SELECT id, fname, lname, patronymic, phone FROM contacts");
+    my $sql_all_contact = $dbh->prepare("SELECT id, fname, lname, patronymic, phone, type_phone FROM contacts");
     $sql_all_contact->execute();
 
     while (my @table = $sql_all_contact->fetchrow_array() ) {
@@ -206,8 +207,19 @@ sub print_all_contact {
     my $lname       =     $table[2];
     my $patronymic  =     $table[3];
     my $phone       =     $table[4];
+    my $phone_type  =     $table[5];
 
-    print "Контакт № $id   $lname  $fname  $patronymic ----> $phone\n";
+    my $phone_type_text;
+
+    if ( $phone_type eq "m" ) {
+        $phone_type_text = "Мобильный"
+    } elsif ( $phone_type eq "s" ) {
+        $phone_type_text = "Стационарный"
+    } else {
+        print "Ошибка, из базы вернулось не корректное значение поля $phone_type"
+    }
+
+    print "Контакт № $id   $lname  $fname  $patronymic ----> $phone $phone_type_text\n";
     
     };
 
@@ -282,6 +294,8 @@ sub del_contact {
                 send_request_to_database($del_phone);
                 print "Контакт удалён!";
                 &start_menu
+            } else {
+                &start_menu
             }
         } else {
             print "Номер не найден!";
@@ -318,8 +332,6 @@ sub update_contact {
                 &start_menu;
             }
 
-
-
             sub get_variable_to_up {
 
                 my $choice = shift;
@@ -355,10 +367,10 @@ sub update_contact {
 
             my ($variable_to_up, $variable_type) = &get_variable_to_up( $choice );
 
-                my $sql_request_update = "UPDATE contacts SET $variable_type = '$variable_to_up' WHERE id='$id_to_up'";
-                send_request_to_database($sql_request_update);
-                print "Контакт изменён!\n";      
-                &start_menu;
+            my $sql_request_update = "UPDATE contacts SET $variable_type = '$variable_to_up' WHERE id='$id_to_up'";
+            send_request_to_database($sql_request_update);
+            print "Контакт изменён!\n";      
+            &start_menu;
         } else {
             print "\nНомер не найден!\n";
             &start_menu;
@@ -374,7 +386,9 @@ sub start_menu {
         1) Показать все контакты;
         2) Добавить контакт;
         3) Удалить контакт;
-        4) Изменить контакт.\n\n}) =~ s/^ +//mg;
+        4) Изменить контакт;
+        
+        0) Выйти из программы.\n\n}) =~ s/^ +//mg;
 
     print $start_message;
 
@@ -390,6 +404,8 @@ sub start_menu {
             &del_contact;
         } elsif ( $choice == 4 ) {
             &update_contact;
+        } elsif ( $choice == 0 ) {
+            exit
         } else {
             print "Такого варианта нет. Попробуй ещё раз\n";
             &start_menu
@@ -408,6 +424,5 @@ sub start_menu {
 
 print $hello_message;
 
-
-&create_database;
+&create_table;
 &start_menu;
