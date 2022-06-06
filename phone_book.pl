@@ -96,22 +96,20 @@ sub create_table {
 
 sub contact_search {
 
-    my $search_parameter = shift;
+    my $search_param = shift;
+    my $sql_search_param;
 
-    if ( check_valid_phone($search_parameter) ) {
-
-        my $sql_check_phone = $dbh->prepare("SELECT id, fname, lname, patronymic, phone, type_phone FROM contacts WHERE phone='$search_parameter'");
-        $sql_check_phone->execute();
-        my @contact = $sql_check_phone->fetchrow_array();
-        return @contact     
-
-    } elsif ( looks_like_number($search_parameter) ) {
-        
-        my $sql_check_id = $dbh->prepare("SELECT id, fname, lname, patronymic, phone, type_phone FROM contacts WHERE id='$search_parameter'");
-        $sql_check_id->execute();
-        my @contact = $sql_check_id->fetchrow_array();
-        return @contact  
+    if ( check_valid_phone($search_param) ) {
+        $sql_search_param = "phone = '$search_param'"
+    } elsif ( looks_like_number($search_param) ) {
+        $sql_search_param = "id = '$search_param'"
     }
+
+    my $sql_contact_search = $dbh->prepare("SELECT id, fname, lname, patronymic, phone, type_phone FROM contacts WHERE $search_param");
+    $sql_contact_search->execute();
+    my @contact = $sql_contact_search->fetchrow_array();
+    return @contact
+
 }
 
 sub enter_phone {
